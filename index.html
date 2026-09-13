@@ -378,6 +378,25 @@
   }
 
   /*
+    iPhone専用(2026-09-13): カレンダー・イベントの2列並びだと幅が狭すぎて
+    イベントの文字が縦書き状態になってしまうため、狭い画面では3枚とも
+    縦に1列積みにする。あわせて拡大率(transform:scale)も下げ、ヘッダーの
+    ナビと重ならないようにする。
+  */
+  @media (max-width: 600px) {
+    .info-panels {
+      grid-template-columns: 1fr;
+      width: 86vw;
+      transform: scale(1);
+    }
+    .panel-calendar,
+    .panel-event,
+    .panel-notice {
+      grid-column: 1;
+    }
+  }
+
+  /*
     幕4(締め): 中央の大ロゴは専用画像ではなく、ヘッダーに収まった本物の#brand-mark
     自体をイントロと逆方向に動かして再現する(updateOutro参照)。そのためこの
     テキストブロックは画面中央ではなく下寄りに配置し、大きくなったロゴと重ならない
@@ -425,6 +444,16 @@
     border: 3px solid #C0392B;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
     display: block;
+  }
+  /*
+    iPhone専用(2026-09-13): この写真はJS側でscale(2)がかかっているため、
+    枠線もそのまま2倍の太さで見えてしまう。見た目の太さを半分にするため、
+    元の値を1.5px(2倍されて3px相当)にしておく。
+  */
+  @media (max-width: 600px) {
+    .intro-photo img {
+      border-width: 1.5px;
+    }
   }
   .placeholder-box {
     width: 100%;

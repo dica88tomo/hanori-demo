@@ -990,11 +990,19 @@ if (video.readyState >= 1) {
   万一ブロックされた場合に備えて最初のスクロール/タッチでも再試行する。
 */
 function primeVideoFrame() {
+  // 'playing'イベント(実際にコマの描画が始まったタイミング)+ 次のrequestAnimationFrameを
+  // 待ってから一時停止する。play()のPromiseが解決した直後に即pauseすると、iOSでは
+  // 実際のフレームが1枚も描画される前に止まってしまうことがあるため。
+  const onPlaying = () => {
+    video.removeEventListener('playing', onPlaying);
+    requestAnimationFrame(() => requestAnimationFrame(() => video.pause()));
+  };
+  video.addEventListener('playing', onPlaying);
+
   const playPromise = video.play();
-  if (playPromise && typeof playPromise.then === 'function') {
-    playPromise.then(() => {
-      video.pause();
-    }).catch(() => {
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch(() => {
+      video.removeEventListener('playing', onPlaying);
       const retry = () => {
         video.play().then(() => video.pause()).catch(() => {});
       };

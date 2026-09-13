@@ -948,30 +948,35 @@ function updatePanelsBeat(videoProgress) {
   }
 }
 
+let stageTrigger;
+
+function runScrub(progress) {
+  updateIntro(progress);
+
+  // INTRO_END以降だけを動画の0〜1に再マッピング(イントロ中は0コマ目で静止)
+  const videoProgress = progress <= INTRO_END
+    ? 0
+    : (progress - INTRO_END) / (1 - INTRO_END);
+
+  if (video.duration) {
+    video.currentTime = videoProgress * video.duration;
+  }
+  beats.forEach(beat => updateBeat(beat, videoProgress));
+  updateIntroPhotos(videoProgress);
+  updateMenuOverlay(videoProgress);
+  updatePanelsBeat(videoProgress);
+  updateOutro(videoProgress);
+  updateProgressDots(videoProgress);
+}
+
 function setupScrub() {
-  ScrollTrigger.create({
+  stageTrigger = ScrollTrigger.create({
     trigger: '#stage',
     start: 'top top',
     end: 'bottom bottom',
     scrub: true,
     onUpdate(self) {
-      const progress = self.progress;
-      updateIntro(progress);
-
-      // INTRO_END以降だけを動画の0〜1に再マッピング(イントロ中は0コマ目で静止)
-      const videoProgress = progress <= INTRO_END
-        ? 0
-        : (progress - INTRO_END) / (1 - INTRO_END);
-
-      if (video.duration) {
-        video.currentTime = videoProgress * video.duration;
-      }
-      beats.forEach(beat => updateBeat(beat, videoProgress));
-      updateIntroPhotos(videoProgress);
-      updateMenuOverlay(videoProgress);
-      updatePanelsBeat(videoProgress);
-      updateOutro(videoProgress);
-      updateProgressDots(videoProgress);
+      runScrub(self.progress);
     }
   });
 }
@@ -983,40 +988,45 @@ if (video.readyState >= 1) {
 }
 
 /*
-  iOS Safari対策: 一度も再生していない<video>は、currentTimeを書き換えても
-  画面に何も描画しない(真っ白/背景色のまま)という既知の癖がある。ここで
-  ミュート再生→即一時停止を1回行い、最初のコマを強制的にデコード・描画させる。
-  muted+playsinlineなのでユーザー操作なしのplay()も通常は許可されるが、
-  万一ブロックされた場合に備えて最初のスクロール/タッチでも再試行する。
+  iOS Safari対策(強化版): play()が返すPromiseが解決も拒否もされないまま固まる
+  ケースがあるため、"success"の判定は'playing'イベント(実際に描画が始まった)
+  だけで行う。成功するまでは、ページ側で最初にplay()を試すのに加えて、
+  ユーザーの最初のスクロール/タップのたびに何度でも再試行し続ける
+  (videoPrimedがtrueになった時点で全ての再試行をやめる)。
 */
-function primeVideoFrame() {
-  // 'playing'イベント(実際にコマの描画が始まったタイミング)+ 次のrequestAnimationFrameを
-  // 待ってから一時停止する。play()のPromiseが解決した直後に即pauseすると、iOSでは
-  // 実際のフレームが1枚も描画される前に止まってしまうことがあるため。
+let videoPrimed = false;
+
+function tryPrimeVideo() {
+  if (videoPrimed) return;
   const onPlaying = () => {
+    videoPrimed = true;
     video.removeEventListener('playing', onPlaying);
-    requestAnimationFrame(() => requestAnimationFrame(() => video.pause()));
+    window.removeEventListener('touchstart', tryPrimeVideo);
+    window.removeEventListener('scroll', tryPrimeVideo);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      video.pause();
+      // 起爆のために再生した分だけcurrentTimeが進んでしまうため、
+      // 現在のスクロール位置に基づいた正しいコマへ同期し直す
+      // (ScrollTrigger.updateは実際のスクロール位置が変わっていないと
+      // onUpdateを再発火しないため、progressを直接読んでrunScrubを呼ぶ)
+      if (stageTrigger) runScrub(stageTrigger.progress);
+    }));
   };
   video.addEventListener('playing', onPlaying);
-
   const playPromise = video.play();
   if (playPromise && typeof playPromise.catch === 'function') {
-    playPromise.catch(() => {
-      video.removeEventListener('playing', onPlaying);
-      const retry = () => {
-        video.play().then(() => video.pause()).catch(() => {});
-      };
-      window.addEventListener('touchstart', retry, { once: true, passive: true });
-      window.addEventListener('scroll', retry, { once: true, passive: true });
-    });
+    playPromise.catch(() => {});
   }
 }
 
 if (video.readyState >= 2) {
-  primeVideoFrame();
+  tryPrimeVideo();
 } else {
-  video.addEventListener('loadeddata', primeVideoFrame, { once: true });
+  video.addEventListener('loadeddata', tryPrimeVideo, { once: true });
 }
+// play()が成功も失敗も返さず固まった場合の保険として、最初のスクロール/タップでも再試行する
+window.addEventListener('touchstart', tryPrimeVideo, { passive: true });
+window.addEventListener('scroll', tryPrimeVideo, { passive: true });
 
 /*
   「24種類のラーメンがある」: 店内写真(幕1、〜0.32)の後、お湯が注がれる(幕3、0.60〜)の前、

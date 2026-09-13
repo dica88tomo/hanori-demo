@@ -983,6 +983,34 @@ if (video.readyState >= 1) {
 }
 
 /*
+  iOS Safari対策: 一度も再生していない<video>は、currentTimeを書き換えても
+  画面に何も描画しない(真っ白/背景色のまま)という既知の癖がある。ここで
+  ミュート再生→即一時停止を1回行い、最初のコマを強制的にデコード・描画させる。
+  muted+playsinlineなのでユーザー操作なしのplay()も通常は許可されるが、
+  万一ブロックされた場合に備えて最初のスクロール/タッチでも再試行する。
+*/
+function primeVideoFrame() {
+  const playPromise = video.play();
+  if (playPromise && typeof playPromise.then === 'function') {
+    playPromise.then(() => {
+      video.pause();
+    }).catch(() => {
+      const retry = () => {
+        video.play().then(() => video.pause()).catch(() => {});
+      };
+      window.addEventListener('touchstart', retry, { once: true, passive: true });
+      window.addEventListener('scroll', retry, { once: true, passive: true });
+    });
+  }
+}
+
+if (video.readyState >= 2) {
+  primeVideoFrame();
+} else {
+  video.addEventListener('loadeddata', primeVideoFrame, { once: true });
+}
+
+/*
   「24種類のラーメンがある」: 店内写真(幕1、〜0.32)の後、お湯が注がれる(幕3、0.60〜)の前、
   videoProgress 0.33〜0.59の区間に重ねるオーバーレイ。商品パッケージが左右バラバラの位置・
   角度から、それぞれ異なるタイミングで下から浮かび上がり、区間終盤でまとめて上へ抜けていく。

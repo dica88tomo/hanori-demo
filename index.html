@@ -88,6 +88,9 @@
     top: 50%;
     left: 50%;
     z-index: 60;
+    /* JSが動く前(動画メタデータ待ちの間など)でも中央に見えるようにしておく保険。
+       JS側もintroT=0で同じ値(xPercent/yPercent:-50)を設定するので競合しない。 */
+    transform: translate(-50%, -50%);
     will-change: transform, top, left;
   }
   .brand-mark img {
@@ -662,6 +665,13 @@
 <script>
 gsap.registerPlugin(ScrollTrigger);
 
+/*
+  iPhone専用の拡大指定に使う判定(2026-09-13)。画面幅ベースの簡易判定で、
+  PC側の見た目には一切影響しない(この定数を使っている箇所だけがiPhone等の
+  狭い画面でのみ変わる)。
+*/
+const IS_MOBILE = window.matchMedia('(max-width: 600px)').matches;
+
 const video = document.getElementById('hero-video');
 const stage = document.getElementById('stage');
 const siteHeader = document.getElementById('site-header');
@@ -786,6 +796,11 @@ const PHOTO_DRIFT_PX = 140;
 const introLeftPhotos = gsap.utils.toArray('.intro-left');
 const introRightPhotos = gsap.utils.toArray('.intro-right');
 const introText = document.getElementById('intro-text');
+
+// 店内・料理写真: iPhoneでは小さく見えるとの指摘があったため、2倍に拡大(PC側は1倍のまま)
+if (IS_MOBILE) {
+  [...introLeftPhotos, ...introRightPhotos].forEach(el => gsap.set(el, { scale: 2 }));
+}
 
 function updateIntroPhotos(videoProgress) {
   const span = INTRO_PHOTOS_END - INTRO_PHOTOS_START;
@@ -981,11 +996,24 @@ function setupScrub() {
   });
 }
 
+/*
+  ロゴの中央配置(updateIntro)は動画のメタデータに依存しないため、動画の読み込みを
+  待たずに即座に一度実行しておく。モバイル回線などで動画の読み込みに時間がかかると、
+  その間ずっと「JSがまだ何も設定していない、素のCSSのままの小さいロゴ」が中央からズレて
+  見えてしまう(top:50%/left:50%だけでは中央揃えの補正が入らないため)問題への対策。
+*/
+updateIntro(0);
 if (video.readyState >= 1) {
   setupScrub();
 } else {
   video.addEventListener('loadedmetadata', setupScrub, { once: true });
 }
+
+// ロゴの中央配置は実際のwindow.innerWidth/innerHeightに依存するため、
+// iOS Safariのアドレスバー開閉などでビューポートサイズが変わった際も再計算する
+window.addEventListener('resize', () => {
+  if (stageTrigger) runScrub(stageTrigger.progress);
+});
 
 /*
   iOS Safari対策(強化版): play()が返すPromiseが解決も拒否もされないまま固まる
@@ -1094,10 +1122,19 @@ const FLOAT_AMP_Y = 14;
 const FLOAT_AMP_X = 7;
 const TILT_AMP = 8;
 
+// 袋麺パッケージ: iPhoneでは小さく見えるとの指摘があったため、2倍に拡大(PC側は1倍のまま)
+const PACKET_MOBILE_SCALE = IS_MOBILE ? 2 : 1;
+
 packetConfigs.forEach((p, i) => {
   p.phase = i * 0.75;
   p.freq = FLOAT_FREQ * (1 + i * 0.06);
-  gsap.set(p.el, { xPercent: 0, rotation: p.rotate, scaleX: p.flip ? -1 : 1, transformPerspective: 800 });
+  gsap.set(p.el, {
+    xPercent: 0,
+    rotation: p.rotate,
+    scaleX: (p.flip ? -1 : 1) * PACKET_MOBILE_SCALE,
+    scaleY: PACKET_MOBILE_SCALE,
+    transformPerspective: 800
+  });
 });
 
 function updateMenuOverlay(videoProgress) {
